@@ -1,0 +1,105 @@
+name: Linux RDP
+
+on:
+  workflow_dispatch:
+
+jobs:
+  linux-rdp:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: Install Desktop Environment and XRDP
+        shell: bash
+        run: |
+          sudo apt-get update
+          # XFCE4 হচ্ছে সবচেয়ে হালকা এবং RDP-এর জন্য স্থিতিশীল ডেক্সটপ এনভায়রনমেন্ট
+          sudo apt-get install -y xfce4 xfce4-goodies xrdp
+
+          # xrdp-কে বলা যে সে XFCE ব্যবহার করবে
+          echo "xfce4-session" > ~/.xsession
+          sudo systemctl enable xrdp
+          sudo systemctl start xrdp
+          
+          echo "Desktop environment and XRDP installed."
+
+      - name: Setup User and Password
+        shell: bash
+        run: |
+          # র্যান্ডম পাসওয়ার্ড তৈরি
+          PASSWORD=$(openssl rand -base64 12)
+          
+          # রানার ইউজার (runner) এর পাসওয়ার্ড সেট করা
+          echo "runner:$PASSWORD" | sudo chpasswd
+          
+          # লগসে পাসওয়ার্ড মাস্ক করা এবং এনভায়রনমেন্টে সেভ করা
+          echo "::add-mask::$PASSWORD"
+          echo "RDP_PASSWORD=$PASSWORD" >> $GITHUB_ENV
+          
+          echo "User password configured."
+
+      - name: Install Tailscale
+        shell: bash
+        run: |
+          curl -fsSL https://tailscale.com/install.sh | sh
+          echo "Tailscale installed."
+
+      - name: Establish Tailscale Connection
+        shell: bash
+        env:
+          TAILSCALE_AUTH_KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
+        run: |
+          if [ -z "$TAILSCALE_AUTH_KEY" ]; then
+            echo "Error: TAILSCALE_AUTH_KEY secret is missing!"
+            exit 1
+          fi
+
+          # টেলস্কেল আপ করা (Ephemeral মোডে যাতে ডিভাইস জমে না থাকে)
+          sudo tailscale up --authkey=$TAILSCALE_AUTH_KEY --hostname=gh-linux-rdp-$GITHUB_RUN_ID --ephemeral
+
+          # আইপি পাওয়ার জন্য অপেক্ষা
+          TS_IP=""
+          for i in {1..12}; do
+            TS_IP=$(tailscale ip -4)
+            if [[ $TS_IP =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              break
+            fi
+            echo "Waiting for Tailscale IP... ($i)"
+            sleep 5
+          done
+
+          if [ -z "$TS_IP" ]; then
+            echo "Error: Tailscale IP not assigned."
+            exit 1
+          fi
+
+          echo "TAILSCALE_IP=$TS_IP" >> $GITHUB_ENV
+          echo "Tailscale IP: $TS_IP"
+
+      - name: Verify RDP Port
+        shell: bash
+        run: |
+          # পোর্ট ৩৩৮৯ খোলা আছে কি না চেক করা
+          nc -zv localhost 3389
+          echo "RDP port 3389 is open."
+
+      - name: Connection Details
+        shell: bash
+        run: |
+          echo ""
+          echo "=========================================="
+          echo "  LINUX RDP ACCESS"
+          echo "  Address : $TAILSCALE_IP"
+          echo "  Username: runner"
+          echo "  Password: $RDP_PASSWORD"
+          echo "=========================================="
+          echo "Connect using 'Remote Desktop Connection' on Windows."
+          echo ""
+
+      - name: Maintain Connection
+        shell: bash
+        run: |
+          while true; do
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] Linux RDP Active — Cancel workflow to terminate"
+            sleep 300
+          done
