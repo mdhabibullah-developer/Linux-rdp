@@ -1,4 +1,4 @@
-name: Linux RDP (Debug Mode)
+name: Linux RDP (Fixed Login)
 
 on:
   workflow_dispatch:
@@ -13,71 +13,63 @@ jobs:
         shell: bash
         run: |
           sudo apt-get update
+          # XFCE4 এবং XRDP ইনস্টল
           sudo apt-get install -y xfce4 xfce4-goodies xrdp
-          echo "xfce4-session" > ~/.xsession
+          
+          # XRDP-কে ssl-cert গ্রুপে যুক্ত করা (এটি না করলে অনেক সময় লগইন ফেইল করে)
+          sudo adduser xrdp ssl-cert
+          
+          # XFCE সেশন কনফিগারেশন (সরাসরি runner ইউজারের হোম ডিরেক্টরিতে)
+          echo "xfce4-session" | sudo tee /home/runner/.xsession
+          sudo chown runner:runner /home/runner/.xsession
+          
           sudo systemctl enable xrdp
           sudo systemctl start xrdp
+          echo "Desktop environment and XRDP installed and configured."
 
       - name: Setup User and Password
         shell: bash
         run: |
+          # শক্তিশালী র্যান্ডম পাসওয়ার্ড
           PASSWORD=$(openssl rand -base64 12)
+          
+          # runner ইউজারের পাসওয়ার্ড সেট করা
           echo "runner:$PASSWORD" | sudo chpasswd
+          
+          # পাসওয়ার্ড মাস্কিং
           echo "::add-mask::$PASSWORD"
           echo "RDP_PASSWORD=$PASSWORD" >> $GITHUB_ENV
+          
+          echo "User password configured."
 
       - name: Install Tailscale
         shell: bash
         run: |
           curl -fsSL https://tailscale.com/install.sh | sh
-          if ! command -v tailscale &> /dev/null; then
-            echo "Tailscale installation failed!"
-            exit 1
-          fi
-          echo "Tailscale installed successfully."
 
       - name: Establish Tailscale Connection
         shell: bash
         env:
           TAILSCALE_AUTH_KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
         run: |
-          # ১. সিক্রেট চেক
           if [ -z "$TAILSCALE_AUTH_KEY" ]; then
-            echo "----------------------------------------------------------------"
-            echo "CRITICAL ERROR: TAILSCALE_AUTH_KEY is empty!"
-            echo "Please go to: Settings -> Secrets and variables -> Actions"
-            echo "Add a secret named 'TAILSCALE_AUTH_KEY' with your Tailscale key."
-            echo "----------------------------------------------------------------"
+            echo "Error: TAILSCALE_AUTH_KEY secret is missing!"
             exit 1
           fi
 
-          echo "Attempting to connect Tailscale..."
-          
-          # ২. টেলস্কেল আপ (ভারবোস মোডে যাতে এরর দেখা যায়)
-          # --ephemeral ব্যবহার করা হয়েছে যাতে ডিভাইস লিস্ট পরিষ্কার থাকে
-          sudo tailscale up --authkey=$TAILSCALE_AUTH_KEY --hostname=gh-linux-debug-$GITHUB_RUN_ID 2>&1 | tee tailscale_log.txt
+          sudo tailscale up --authkey=$TAILSCALE_AUTH_KEY --hostname=gh-linux-fixed-$GITHUB_RUN_ID 2>&1 | tee tailscale_log.txt
 
-          if [ ${PIPESTATUS[0]} -ne 0 ]; then
-            echo "Tailscale 'up' command failed. Checking logs..."
-            cat tailscale_log.txt
-            exit 1
-          fi
-
-          # ৩. আইপি পাওয়ার জন্য অপেক্ষা
           TS_IP=""
           for i in {1..15}; do
             TS_IP=$(tailscale ip -4)
             if [[ $TS_IP =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-              echo "Tailscale connected! IP: $TS_IP"
               break
             fi
-            echo "Waiting for IP... ($i/15)"
             sleep 5
           done
 
           if [ -z "$TS_IP" ]; then
-            echo "Tailscale connected but no IP assigned."
-            sudo tailscale status
+            echo "Error: Tailscale IP not assigned."
             exit 1
           fi
 
@@ -88,7 +80,7 @@ jobs:
         run: |
           echo ""
           echo "=========================================="
-          echo "  LINUX RDP ACCESS"
+          echo "  LINUX RDP ACCESS (FIXED)"
           echo "  Address : $TAILSCALE_IP"
           echo "  Username: runner"
           echo "  Password: $RDP_PASSWORD"
