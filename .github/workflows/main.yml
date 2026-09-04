@@ -36,8 +36,7 @@ jobs:
           # runner ইউজারের পাসওয়ার্ড সেট করা
           echo "runner:$PASSWORD" | sudo chpasswd
           
-          # পাসওয়ার্ড মাস্কিং
-          echo "::add-mask::$PASSWORD"
+          # পাসওয়ার্ড মাস্কিং রিমুভ করা হয়েছে যাতে আপনি কানেক্ট করতে পারেন
           echo "RDP_PASSWORD=$PASSWORD" >> $GITHUB_ENV
           
           echo "User password configured."
