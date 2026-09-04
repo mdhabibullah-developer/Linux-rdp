@@ -55,7 +55,7 @@ jobs:
           
           # ২. টেলস্কেল আপ (ভারবোস মোডে যাতে এরর দেখা যায়)
           # --ephemeral ব্যবহার করা হয়েছে যাতে ডিভাইস লিস্ট পরিষ্কার থাকে
-          sudo tailscale up --authkey=$TAILSCALE_AUTH_KEY --hostname=gh-linux-debug-$GITHUB_RUN_ID --ephemeral 2>&1 | tee tailscale_log.txt
+          sudo tailscale up --authkey=$TAILSCALE_AUTH_KEY --hostname=gh-linux-debug-$GITHUB_RUN_ID 2>&1 | tee tailscale_log.txt
 
           if [ ${PIPESTATUS[0]} -ne 0 ]; then
             echo "Tailscale 'up' command failed. Checking logs..."
